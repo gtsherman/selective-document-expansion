@@ -1,0 +1,6 @@
+venv/
+.idea/
+.Rproj.user/
+.RData
+.Rhistory
+*.pyc
