@@ -3,7 +3,7 @@ from sys import stderr
 
 from pandas import read_csv
 from sklearn import linear_model, naive_bayes, neighbors, dummy
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import cross_val_predict, train_test_split
 
 
@@ -12,6 +12,7 @@ def main():
     options.add_argument('--train', help='training data (requires --test)')
     options.add_argument('--test', help='testing data (requires --train)')
     options.add_argument('--data', help='data for cross validation or train/test split mode (default=CV)')
+    options.add_argument('--rank-changes', help='file containing rank change information for query-document pairs')
     options.add_argument('--mode', choices=['cv', 'split'], default='cv', help='cross validation (cv) or train/test '
                                                                                'split (split) mode for evaluating a '
                                                                                'single dataset')
@@ -29,20 +30,34 @@ def main():
     if args.data and args.test:
         print('--data used with --test. Ignoring --test.', file=stderr)
 
+    # Read data
     if args.train and args.test:
         with open(args.train) as f:
             training_data = read_csv(f)
 
-        training_data, training_features, training_labels = prepare_data(training_data)
-
         with open(args.test) as f:
             testing_data = read_csv(f)
 
+        if args.rank_changes:
+            with open(args.rank_changes) as f:
+                rank_changes = read_csv(f)
+
+            training_data = training_data.merge(rank_changes)
+            testing_data = testing_data.merge(rank_changes)
+
+        training_data, training_features, training_labels = prepare_data(training_data)
         testing_data, testing_features, testing_labels = prepare_data(testing_data)
+
 
     if args.data:
         with open(args.data) as f:
             data = read_csv(f)
+
+        if args.rank_changes:
+            with open(args.rank_changes) as f:
+                rank_changes = read_csv(f)
+
+            data = data.merge(rank_changes)
 
         data, features, labels = prepare_data(data)
 
@@ -57,12 +72,6 @@ def main():
     baseline.fit(training_features, training_labels)
     predictions = baseline.predict(testing_features)
     print('Train/test baseline most frequent:', accuracy_score(testing_labels, predictions), file=stderr)
-
-    logreg = linear_model.LogisticRegression()
-    #rfecv = RFECV(logreg, cv=10)
-    logreg.fit(training_features, training_labels)
-    predictions = logreg.predict(testing_features)
-    print('Train/test logistic regression:', accuracy_score(testing_labels, predictions), file=stderr)
 
     nb = naive_bayes.GaussianNB()
     nb.fit(training_features, training_labels)
@@ -79,9 +88,14 @@ def main():
     predictions = knn_dist.predict(testing_features)
     print('Train/test KNN (distance):', accuracy_score(testing_labels, predictions), file=stderr)
 
-    #print('Train/test logistic regression:', accuracy_score(testing_labels, predictions))
-    #for i, prediction in enumerate(predictions):
-        #print(training_data['docno'][i], training_data['query'][i], prediction)
+    logreg = linear_model.LogisticRegression()
+    #rfecv = RFECV(logreg, cv=10)
+    logreg.fit(training_features, training_labels)
+    predictions = logreg.predict(testing_features)
+    print('Train/test logistic regression:', accuracy_score(testing_labels, predictions), file=stderr)
+
+    for i, prediction in enumerate(predictions):
+        print(testing_data['docno'][i], testing_data['query'][i], prediction)
 
 
 def run_cv(data, features, labels, folds):
@@ -125,20 +139,24 @@ def prepare_data(data):
 
 
 def convert_to_classes(data):
-    # if there is no rank_change, the doc's rank dropped below 1000 and therefore decreased (this shouldn't actually
-    # happen since we simply re-rank the docs returned for the baseline, but different baselines exist so...)
-    data['rank_change'] = data['rank_change'].fillna(value=-1)
+    try:
+        # if there is no rank_change, the doc's rank dropped below 1000 and therefore decreased (this shouldn't actually
+        # happen since we simply re-rank the docs returned for the baseline, but different baselines exist so...)
+        data['rank_change'] = data['rank_change'].fillna(value=-1)
 
-    # rankImproved = binary variable of rank improvement (-1 includes those whose rank stayed the same)
-    data['rankImproved'] = data['rank_change'].apply(lambda rc: 1 if rc > 0 else -1)
+        # rankImproved = binary variable of rank improvement (-1 includes those whose rank stayed the same)
+        data['rankImproved'] = data['rank_change'].apply(lambda rc: 1 if rc > 0 else -1)
 
-    # if the rank improved (1) and the document is relevant (rel=1), label=1
-    # if the rank decreased (-1) and the document is nonrelevant (rel=-1), label=1  -- this is a good result
-    # if the rank improvement and relevance do not match, it is not what we want, label=-1
-    data['label'] = data['rankImproved'] * _binary_relevance(data['relevance']) + 0
+        # if the rank improved (1) and the document is relevant (rel=1), label=1
+        # if the rank decreased (-1) and the document is nonrelevant (rel=-1), label=1  -- this is a good result
+        # if the rank improvement and relevance do not match, it is not what we want, label=-1
+        data['label'] = data['rankImproved'] * _binary_relevance(data['relevance']) + 0
 
-    data['qlImproved'] = data['ql_change'].apply(lambda qc: 1 if qc > 0 else -1)
-    data['label'] = data['qlImproved'] * _binary_relevance(data['relevance']) + 0
+        # data['qlImproved'] = data['ql_change'].apply(lambda qc: 1 if qc > 0 else -1)
+        # data['label'] = data['qlImproved'] * _binary_relevance(data['relevance']) + 0
+    except KeyError:
+        print('Error identifying classes. Did you forget the --rank-changes option?', file=stderr)
+        quit()
 
     return data
 
