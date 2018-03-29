@@ -22,15 +22,8 @@ def main():
         #docs = baseline_docs.union(experiment_docs)
 
         for doc in baseline_docs:
-            try:
-                baseline_rank = only_nonrel_docs(baseline, query, qrels, judged_only=False, keep=(doc)).index(doc) + 1
-            except ValueError:
-                baseline_rank = None
-
-            try:
-                test_rank = only_nonrel_docs(experiment, query, qrels, judged_only=False, keep=(doc)).index(doc) + 1
-            except ValueError:
-                test_rank = None
+            baseline_rank = baseline.rank_of(doc, query)
+            test_rank = experiment.rank_of(doc, query)
 
             baseline_ql = baseline.score_of(doc, query)
             experiment_ql = experiment.score_of(doc, query)
