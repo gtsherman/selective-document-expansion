@@ -147,7 +147,7 @@ class BatchSearchResults(object):
         lines = []
         for query in self.results:
             for i, doc in enumerate(self.results[query]):
-                lines.append(' '.join((query, 'Q0', doc.docno, str(i+1), str(doc.score), 'python-dump')))
+                lines.append(' '.join((str(query), 'Q0', doc.docno, str(i+1), str(doc.score), 'python-dump')))
         return '\n'.join(lines)
 
 
